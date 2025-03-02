@@ -1,0 +1,6 @@
+name = "parametricity"
+version = "0.1.0"
+defaultTargets = ["parametricity"]
+
+[[lean_lib]]
+name = "Parametricity"
