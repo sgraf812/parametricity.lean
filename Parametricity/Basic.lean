@@ -38,17 +38,20 @@ def Ki.interp : Ki → Type 1
   | .star => Type
   | .arrow dom cod => dom.interp → cod.interp
 
-inductive Ty : Type where
-  | var (x : Nat) : Ty
-  | unit : Ty
-  | bool : Ty
-  | fn (dom : Ty) (cod : Ty) : Ty
-  | forall (x : String) (dom : Ki) (body : Ty) : Ty
-  | abs (x : String) (dom : Ki) (body : Ty) : Ty
-  | app (f : Ty) (a : Ty) : Ty
-
 abbrev Name := String
+inductive Ty' (α : Type): Type where
+  | var (x : α) : Ty' α
+  | unit : Ty' α
+  | bool : Ty' α
+  | fn (dom : Ty' α) (cod : Ty' α) : Ty' α
+  | forall (x : Name) (dom : Ki) (body : α → Ty' α) : Ty' α
+  | abs (x : Name) (dom : Ki) (body : α → Ty' α) : Ty' α
+  | app (f : Ty' α) (a : Ty' α) : Ty' α
 
+abbrev Ty := ∀ {α}, Ty' α
+
+#check ∀ (x : Type), x
+/-
 -- As in TAPL
 def Ty.shift (d : Nat) (cutoff : Nat) : Ty → Ty
   | .var x => .var (if x < cutoff then x else x + d)
@@ -68,45 +71,58 @@ def Ty.subst : Ty → Nat → Ty → (d : _ := 0) → Ty
   | .forall x dom body, j, e, d => .forall x dom (body.subst (j + 1) e (d + 1))
   | .abs x dom body, j, e, d => .abs x dom (body.subst (j + 1) e (d + 1))
   | .app f a, j, e, d => .app (f.subst j e d) (a.subst j e d)
+-/
+
+def Ty'.squash : Ty' (Ty' α) → Ty' α
+  | .var x => x
+  | .unit => .unit
+  | .bool => .bool
+  | .fn dom cod => .fn (dom.squash) (cod.squash)
+  | .forall x dom body => .forall x dom (fun x => (body (.var x)).squash)
+  | .abs x dom body => .abs x dom (fun x => (body (.var x)).squash)
+  | .app f a => .app (f.squash) (a.squash)
+
+def Ty'.subst (e : ∀{α}, α → Ty' α) (e' : Ty' α) : Ty' α :=
+  (e e').squash
 
 section
 notation:65 τ₁ "[" i " ↦ " τ₂ "]" => Ty.subst τ₁ i τ₂
 set_option hygiene false
-local notation:65 Γ " ⊩ " τ " : " κ:30 => Ty.DefEq Γ τ τ κ
-local notation:65 Γ " ⊩ " τ₁ " ≡ " τ₂ " : " κ:30 => Ty.DefEq Γ τ₁ τ₂ κ
-inductive Ty.DefEq : List Ki → Ty → Ty → Ki → Prop where
-  | symm : Γ ⊩ τ₁ ≡ τ₂ : κ → Γ ⊩ τ₂ ≡ τ₁ : κ
-  | trans : Γ ⊩ τ₁ ≡ τ₂ : κ → Γ ⊩ τ₂ ≡ τ₃ : κ → Γ ⊩ τ₁ ≡ τ₃ : κ
-  | var : Γ[i]? = .some κ → Γ ⊩ .var i : κ
-  | unit : Γ ⊩ .unit : .star
-  | bool : Γ ⊩ .bool : .star
+local notation:65 "⊩ " τ " : " κ:30 => Ty.DefEq τ τ κ
+local notation:65 "⊩ " τ₁ " ≡ " τ₂ " : " κ:30 => Ty.DefEq τ₁ τ₂ κ
+inductive Ty.DefEq : {α : Type} → Ty' α → Ty' α → Ki → Prop where
+  | symm : ⊩ τ₁ ≡ τ₂ : κ → ⊩ τ₂ ≡ τ₁ : κ
+  | trans : ⊩ τ₁ ≡ τ₂ : κ → ⊩ τ₂ ≡ τ₃ : κ → ⊩ τ₁ ≡ τ₃ : κ
+  | var : ⊩ .var x : κ
+  | unit : ⊩ .unit : .star
+  | bool : ⊩ .bool : .star
   | fn :
-      Γ ⊩ dom₁ ≡ dom₂ : κ
-    → Γ ⊩ cod₁ ≡ cod₂ : κ
+      ⊩ dom₁ ≡ dom₂ : κ
+    → ⊩ cod₁ ≡ cod₂ : κ
     --------------------------------------------
-    → Γ ⊩ .fn dom₁ cod₁ ≡ .fn dom₂ cod₂ : κ
+    → ⊩ .fn dom₁ cod₁ ≡ .fn dom₂ cod₂ : κ
 
   | forall :
-      (dom::Γ) ⊩ body₁ ≡ body₂ : .star
+      (∀ x, ⊩ body₁ x ≡ body₂ x : .star)
     ------------------------------------------------------------
-    → Γ ⊩ .forall _ dom body₁ ≡ .forall _ dom body₂ : .star
+    → ⊩ .forall _ dom body₁ ≡ .forall _ dom body₂ : .star
 
   | abs :
-      (dom::Γ) ⊩ body₁ ≡ body₂ : cod
+      (∀ x, ⊩ body₁ x ≡ body₂ x : cod)
     -----------------------------------------------------------------
-    → Γ ⊩ .abs _ dom body₁ ≡ .abs _ dom body₂ : .arrow dom cod
+    → ⊩ .abs _ dom body₁ ≡ .abs _ dom body₂ : .arrow dom cod
 
   | app :
-      Γ ⊩ f₁ ≡ f₂ : .arrow dom cod
-    → Γ ⊩ a₁ ≡ a₂ : dom
+      ⊩ f₁ ≡ f₂ : .arrow dom cod
+    → ⊩ a₁ ≡ a₂ : dom
     ----------------------------------------
-    → Γ ⊩ .app f₁ a₁ ≡ .app f₂ a₂ : cod
+    → ⊩ .app f₁ a₁ ≡ .app f₂ a₂ : cod
 
   | beta :
-      dom::Γ ⊩ body : cod
-    → Γ ⊩ τ : dom
+      (∀ x, ⊩ body x : cod)
+    → ⊩ τ : dom
     ----------------------------------------
-    → Γ ⊩ .app (.abs _ dom body) τ ≡ body[0 ↦ τ] : cod
+    → ⊩ .app (.abs (α := Ty' α) _ dom body) τ ≡ body τ : cod
 
 -- def Ty'.interp (free : Name → Type) : Ty' Name → Type
 --   | .var x => free x
