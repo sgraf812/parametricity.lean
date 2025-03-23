@@ -4,3 +4,8 @@ defaultTargets = ["parametricity"]
 
 [[lean_lib]]
 name = "Parametricity"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.17.0"
