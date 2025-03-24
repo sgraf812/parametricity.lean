@@ -1,5 +1,5 @@
-import Mathlib.Data.Set.Basic
-
+import Parametricity.Set
+import Lean
 namespace Parametricity
 
 -- simple types:
@@ -47,13 +47,13 @@ def Set.fn (dom : Set Type) (cod : Set Type) : Set Type :=
   { f | ∃ d c, f = (d → c) ∧ d ∈ dom ∧ c ∈ cod }
 
 def Set.forall (body : Set Type → Set Type) : Set Type :=
-  { f | ∃ x, f ∈ body x }
+  { y | ∃ x, y ∈ body x }
 
 @[reducible, simp]
 def Ty'.interp : Ty' (Set Type) → Set Type
   | .var x => x
-  | .unit => {Unit}
-  | .bool => {Bool}
+  | .unit => (· = Unit)
+  | .bool => (· = Bool)
   | .fn dom cod => Set.fn dom.interp cod.interp
   | .forall body => Set.forall (fun x => (body x).interp)
 
@@ -107,13 +107,13 @@ def Elem.app {dom cod : Set Type} (f : Elem (Set.fn dom cod)) (a : Elem dom) : E
 def Elem.abs {dom cod : Set Type} (body : Elem dom → Elem cod) : Elem (Set.fn dom cod) := fun τ _ =>
   { efn | ∀ τ₁ τ₂ (h : τ = (τ₁ → τ₂)) (hτ₁ : τ₁ ∈ dom) (hτ₂ : τ₂ ∈ cod),
           ∀ (ea : τ₁), body (Elem.singleton ea) τ₂ hτ₂ (cast h efn ea) }
-def Elem.tyapp (f : Elem (Set.forall body)) (a : Set Type) : Elem (body a) := fun τ _ =>
-  { efa | ∀ τ' (hf : (τ' → τ) ∈ (Set.fn dom cod)) (ha : τ' ∈ dom)
-          ef ea (hef : ef ∈ f (τ' → τ) hf) (hea : ea ∈ a τ' ha),
-          ef ea = efa }
+def Elem.tyapp (f : Elem (Set.forall body)) (a : Set Type) : Elem (body a) := fun τ hτ =>
+  { efa | f τ ⟨a, hτ⟩ efa }
+def Elem.tyabs {body : Set Type → Set Type} (f : ∀ a : Set Type, Elem (body a)) : Elem (Set.forall body) := fun τ hτ =>
+  { ef | ∀ x (hx : τ ∈ body x), f x τ hx ef }
 
 example : Elem.app (dom := {Unit}) (Elem.abs (fun x => x)) (Elem.singleton ()) Unit (by rfl) () := by
-  simp[Elem.abs, Elem.app]
+  simp[Elem.singleton, Elem.abs, Elem.app]
   trivial
 
 example : Elem.app (dom := {Unit}) (Elem.abs (fun x => x)) (Elem.singleton ()) Unit (by rfl) () := by
@@ -131,12 +131,10 @@ inductive Exp' {ρ : Type u} (Γ : Ty' ρ → Type 1) : Ty' ρ → Type (max 1 u
   | abs (dom : Ty' ρ) (body : Γ dom → Exp' Γ cod) : Exp' Γ (.fn dom cod)
   | tyabs {τ : ρ → Ty' ρ} (body : (x : ρ) → Exp' Γ (τ x))
     : Exp' Γ (.forall τ)
-  | tyapp (τ₁ : ρ → Ty' ρ) (e : Exp' Γ (.forall τ₁)) (τ₂ : ρ)
+  | tyapp {τ₁ : ρ → Ty' ρ} (e : Exp' Γ (.forall τ₁)) (τ₂ : ρ)
     : Exp' Γ (τ₁ τ₂)
 
 -- def Exp {ρ : Type u} (ty : Ty) := ∀ {Γ : Ty' ρ → Type u}, Exp' Γ ty
-
-def Ty'.apply ()
 
 open Classical in
 @[reducible]
@@ -146,9 +144,8 @@ def Exp'.interp {ty : Ty' (Set Type)} : Exp' (Elem ∘ Ty'.interp) ty → Elem (
   | .boolLit b => Elem.singleton b
   | .app f x => Elem.app f.interp x.interp
   | .abs dom body => Elem.abs (fun x => (body x).interp)
-  | .tyapp scheme f τ => Elem.tyapp f.interp τ
---  | .tyabs body => fun x => (body x).interp
-  | _ => sorry
+  | .tyapp (τ₁:=_scheme) f τ => Elem.tyapp f.interp τ
+  | .tyabs body => Elem.tyabs (fun x => (body x).interp)
 
 declare_syntax_cat systemf_kind
 syntax:max "[ki|" systemf_kind "|]" : term
@@ -216,13 +213,13 @@ macro_rules
   | `(systemf_term|$f $a) => `(Exp'.app [exp|$f|] [exp|$a|])
   | `(systemf_term|Λ$x, $e) => `(Exp'.tyabs (fun $x => [exp|$e|]))
   | `(systemf_term|Λ$x : $_ki, $e) => `(Exp'.tyabs (fun $x => [exp|$e|]))
-  | `(systemf_term|$f[$ty]) => `(Exp'.tyapp [exp|$f|] [ty|$ty|] (RelSubst2.subst)) -- tODO fix
+  | `(systemf_term|$f[$ty]) => `(Exp'.tyapp [exp|$f|] [ty|$ty|].interp) -- tODO fix
 
 #check [exp| () |]
 #check [exp| (λ x, x) |]
 #check [exp| (λ x : Unit, x) |]
 #check [exp| (Λ α, λ x : α, x) |]
--- #check [exp| (Λ α : ⋆, λ x : α, x)[Unit] () |]
+#check [exp| (Λ α : ⋆, λ x : α, x)[Unit] () |]
 
 -- example : Exp' Ty'.interp0 .unit := [exp| (Λ α : ⋆, λ x : α, x)[Unit] () |]
 

@@ -5,7 +5,11 @@ defaultTargets = ["parametricity"]
 [[lean_lib]]
 name = "Parametricity"
 
+#[[require]]
+#name = "mathlib"
+#scope = "leanprover-community"
+#rev = "v4.17.0"
+
 [[require]]
-name = "mathlib"
+name = "batteries"
 scope = "leanprover-community"
-rev = "v4.17.0"
